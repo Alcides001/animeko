@@ -1,0 +1,51 @@
+name: Raspberry Pi 5 ARM64 Build
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**/*.kt'
+      - '**/*.kts'
+      - 'app/**'
+      - 'datasource/**'
+      - 'danmaku/**'
+      - 'torrent/**'
+      - 'utils/**'
+      - '.github/workflows/raspi-build.yml'
+concurrency:
+  group: raspi-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build_arm64_deb:
+    name: Build Debian ARM64 package (emulated)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Enable QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Build in ARM64 container
+        uses: uraimo/run-on-arch-action@v2.6.1
+        with:
+          arch: aarch64
+          distro: ubuntu22.04
+          githubToken: ${{ github.token }}
+          dockerRunArgs: |
+            --volume "${{ github.workspace }}:/workspace"
+          shell: bash
+          install: |
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget git unzip zip fakeroot dpkg-dev build-essential
+            DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-21-jdk vlc libvlc-dev
+          run: |
+            set -euo pipefail
+            cd /workspace
+            export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
+            echo "JAVA_HOME=$JAVA_HOME"
+            ./gradlew :app:desktop:packageReleaseDeb -x test
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ani-linux-deb-arm64
+          path: app/desktop/build/compose/binaries/main/deb/*.deb
+          if-no-files-found: error
